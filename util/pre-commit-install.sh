@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Copyright (c) 2022 The Regents of the University of California
 # All Rights Reserved.
