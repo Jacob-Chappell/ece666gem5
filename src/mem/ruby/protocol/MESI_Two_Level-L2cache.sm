@@ -43,6 +43,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
    Cycles l2_request_latency := 2;
    Cycles l2_response_latency := 2;
    Cycles to_l1_latency := 1;
+   NotSharedTable nsrt();
 
   // Message Queues
   // From local bank of L2 cache TO the network
@@ -375,6 +376,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
           } else if(in_msg.Type == CoherenceResponseType:MEMORY_ACK) {
               trigger(Event:Mem_Ack, in_msg.addr, cache_entry, tbe);
           } else if(in_msg.Type == CoherenceResponseType:INV) {
+              // need to invalidate nsrt regardless of state, blocks may be replaced already
+              nsrt.invalidateRegion(in_msg.addr);
               trigger(Event:MEM_Inv, in_msg.addr, cache_entry, tbe);
           } else {
             error("unknown message type");
@@ -456,6 +459,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
         out_msg.MessageSize := MessageSizeType:Control;
         out_msg.AccessMode := in_msg.AccessMode;
         out_msg.Prefetch := in_msg.Prefetch;
+        out_msg.isNS := nsrt.isInTable(address);
       }
     }
   }
@@ -682,6 +686,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
       cache_entry.DataBlk := in_msg.DataBlk;
       if (in_msg.Dirty) {
         cache_entry.Dirty := in_msg.Dirty;
+      }
+      if in_msg.isRegionNS {
+        nsrt.insertRegion(in_msg.addr)
       }
     }
   }

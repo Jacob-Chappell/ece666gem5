@@ -39,9 +39,10 @@ NotSharedTable::invalidateRegion(Addr address)
     address = this.toRegion(address);
     DPRINTF("NRST removing region %x", address);
     for(std::vector<Addr>::iterator it = this.m_region_list.begin(); it != this.m_region_list.end();) {
-        if(*it == this.toRegion(address)) {
+        if(*it == this.toRegion(address))
             it = this.m_region_list.erase(it);
-        }
+        else
+            ++it;
     }
 }
 

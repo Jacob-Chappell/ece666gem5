@@ -120,6 +120,7 @@ if env['CONF']['RUBY_PROTOCOL_CHI']:
 MakeInclude('structures/TBETable.hh')
 MakeInclude('structures/TimerTable.hh')
 MakeInclude('structures/WireBuffer.hh')
+MakeInclude('structures/RegionScout.hh')
 MakeInclude('system/DMASequencer.hh')
 MakeInclude('system/Sequencer.hh')
 
