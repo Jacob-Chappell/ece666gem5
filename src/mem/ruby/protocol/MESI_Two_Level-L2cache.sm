@@ -43,7 +43,6 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
    Cycles l2_request_latency := 2;
    Cycles l2_response_latency := 2;
    Cycles to_l1_latency := 1;
-   NotSharedTable nsrt();
 
   // Message Queues
   // From local bank of L2 cache TO the network
@@ -170,11 +169,19 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
     bool isPresent(Addr);
   }
 
+  structure(NotSharedTable, external="yes") {
+    bool isInTable(Addr);
+    void insertRegion(Addr);
+    void invalidateRegion(Addr);
+  }
+
   TBETable TBEs, template="<L2Cache_TBE>", constructor="m_number_of_TBEs";
 
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
   Cycles ticksToCycles(Tick t);
+
+  NotSharedTable nsrt;
 
   void set_cache_entry(AbstractCacheEntry a);
   void unset_cache_entry();
@@ -687,8 +694,8 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
       if (in_msg.Dirty) {
         cache_entry.Dirty := in_msg.Dirty;
       }
-      if in_msg.isRegionNS {
-        nsrt.insertRegion(in_msg.addr)
+      if (in_msg.isRegionNS) {
+        nsrt.insertRegion(in_msg.addr);
       }
     }
   }

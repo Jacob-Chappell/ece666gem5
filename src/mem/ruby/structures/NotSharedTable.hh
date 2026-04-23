@@ -1,9 +1,10 @@
 /// Contains all structure definitions for RegionScout
-#ifndef __MEM_RUBY_STRUCTURES_CACHEMEMORY_HH__
-#define __MEM_RUBY_STRUCTURES_CACHEMEMORY_HH__
+#ifndef __MEM_RUBY_STRUCTURES_NSRT_HH__
+#define __MEM_RUBY_STRUCTURES_NSRT_HH__
 
 #include <stdint.h>
 #include <vector>
+#include "base/types.hh"
 
 namespace gem5
 {
@@ -34,10 +35,10 @@ class NotSharedTable {
     Addr toRegion(Addr address);
 
     std::vector<Addr> m_region_list;
-}
+};
 
 } // namespace ruby
 } // namespace gem5
 
 
-#endif // __MEM_RUBY_STRUCTURES_CACHEMEMORY_HH__
+#endif // __MEM_RUBY_STRUCTURES_REGIONSCOUT_HH__
