@@ -59,6 +59,9 @@ enumeration(CoherenceResponseType, desc="...") {
   EXCLUSIVE_UNBLOCK, desc="exclusive unblock";
   INV, desc="Invalidate from directory";
 
+  REGION_INV, desc="RegionScout NSRT region invalidation";
+  REGION_INV_ACK, desc="RegionScout NSRT region ack";
+
   FLUSH_ACK, desc="Flush ack";
 }
 

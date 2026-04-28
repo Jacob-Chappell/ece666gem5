@@ -69,6 +69,7 @@ DebugFlag('RubyStats')
 DebugFlag('RubyResourceStalls')
 DebugFlag('RubyProtocol')
 DebugFlag('RubyHitMiss')
+DebugFlag('RegionScout')
 
 CompoundFlag('Ruby', [ 'RubyQueue', 'RubyNetwork', 'RubyTester',
     'RubyGenerated', 'RubySlicc', 'RubySystem', 'RubyCache',
@@ -121,6 +122,7 @@ MakeInclude('structures/TBETable.hh')
 MakeInclude('structures/TimerTable.hh')
 MakeInclude('structures/WireBuffer.hh')
 MakeInclude('structures/NotSharedTable.hh')
+MakeInclude('structures/BloomFilter.hh')
 MakeInclude('system/DMASequencer.hh')
 MakeInclude('system/Sequencer.hh')
 

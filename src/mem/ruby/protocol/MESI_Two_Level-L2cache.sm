@@ -130,6 +130,9 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
 
     MEM_Inv, desc="Invalidation from directory";
 
+
+    RegionInv, desc="RegionScout region invalidation";
+
     Flush, desc="Flush request, write to mem";
     Flush_NP, desc="Flush request not present in requestor L1 and L0, write to mem";
     Flush_Clean, desc="Flush request, clean data, no write to mem";
@@ -386,6 +389,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
               // need to invalidate nsrt regardless of state, blocks may be replaced already
               nsrt.invalidateRegion(in_msg.addr);
               trigger(Event:MEM_Inv, in_msg.addr, cache_entry, tbe);
+          } else if (in_msg.Type == CoherenceResponseType:REGION_INV) {
+              nsrt.invalidateRegion(in_msg.addr);
+
+              DPRINTF(RegionScout,
+                      "RS L2 REGION_INV addr=%#x sender=%s\n",
+                      in_msg.addr, in_msg.Sender);
+
+              trigger(Event:RegionInv, in_msg.addr, cache_entry, tbe);
           } else {
             error("unknown message type");
           }
@@ -694,7 +705,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
       if (in_msg.Dirty) {
         cache_entry.Dirty := in_msg.Dirty;
       }
+      DPRINTF(RegionScout,
+              "RS L2 recv data addr=%#x isRegionNS=%d\n",
+              in_msg.addr, in_msg.isRegionNS);
+
       if (in_msg.isRegionNS) {
+        DPRINTF(RegionScout,
+                "RS L2 NSRT insert addr=%#x\n",
+                in_msg.addr);
         nsrt.insertRegion(in_msg.addr);
       }
     }
@@ -926,6 +944,23 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
 
   action(kd_wakeUpDependents, "kd", desc="wake-up dependents") {
     wakeUpBuffers(address);
+  }
+
+  // RegionScout Actions
+  action(rs_sendRegionInvAck, "rsack", desc="Send RegionScout region invalidation ack") {
+    peek(responseL2Network_in, ResponseMsg) {
+      enqueue(responseL2Network_out, ResponseMsg, l2_response_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceResponseType:REGION_INV_ACK;
+        out_msg.Sender := machineID;
+        out_msg.Destination.add(in_msg.Sender);
+        out_msg.MessageSize := MessageSizeType:Response_Control;
+
+        DPRINTF(RegionScout,
+                "RS L2 send REGION_INV_ACK addr=%#x dest=%s\n",
+                address, in_msg.Sender);
+      }
+    }
   }
 
   //*****************************************************
@@ -1338,5 +1373,11 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
     s_deallocateTBE;
     o_popIncomingResponseQueue;
     kd_wakeUpDependents;
+  }
+
+  transition({NP, SS, M, MT, M_I, I_I, S_I, MT_I, MCT_I, IS, ISS, IM,
+              SS_MB, MT_MB, MT_IIB, MT_IB, MT_SB, I_F, I_FF, MT_F}, RegionInv) {
+    rs_sendRegionInvAck;
+    o_popIncomingResponseQueue;
   }
 }
