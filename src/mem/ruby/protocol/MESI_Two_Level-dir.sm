@@ -49,6 +49,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     ID, AccessPermission:Busy, desc="Intermediate state for DMA_READ when in I";
     ID_W, AccessPermission:Busy, desc="Intermediate state for DMA_WRITE when in I";
     IM_RS_WAIT, AccessPermission:Busy, desc="Waiting for RegionScout region invalidation ACKs";
+    IM_RS_DIRTY_WAIT, AccessPermission:Busy, desc="Waiting for dirty owner data after RegionScout revoke";
 
     M, AccessPermission:Maybe_Stale, desc="memory copy may be stale, i.e. other modified copies may exist";
     IM, AccessPermission:Busy, desc="Intermediate State I>M";
@@ -66,9 +67,6 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     Memory_Data, desc="Fetched data from memory arrives";
     Memory_Ack, desc="Writeback Ack from memory arrives";
 
-    Memory_Data_Revoke, desc="Fetched data from memory arrives and RegionScout revoke is needed";
-    Memory_Data_NoRevoke, desc="Fetched data from memory arrives and no RegionScout revoke is needed";
-    RegionInvLastAck, desc="Last RegionScout region invalidation ack";
 //added by SS for dma
     DMA_READ, desc="A DMA Read memory request";
     DMA_WRITE, desc="A DMA Write memory request";
@@ -76,6 +74,11 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
     // RegionScout events
     RegionInvAck, desc="RegionScout region invalidation ack";
+    RegionInvLastAckClean, desc="Last RegionScout ack and no dirty owner exists";
+    RegionInvLastAckDirty, desc="Last RegionScout ack and dirty owner exists";
+
+    Memory_Data_Revoke, desc="Fetched data from memory arrives and RegionScout revoke is needed";
+    Memory_Data_NoRevoke, desc="Fetched data from memory arrives and no RegionScout revoke is needed";
 
   }
 
@@ -109,6 +112,9 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     MachineID RegionRequestor, desc="Requestor waiting for delayed data";
     DataBlock RegionDataBlk, desc="Delayed memory data";
     bool RegionIsNS, desc="Delayed RegionScout NS hint";
+
+    bool RegionDirtyOwnerSeen, desc="A revoked holder has dirty copy of requested block";
+    MachineID RegionDirtyOwner, desc="Dirty owner reported by RegionScout revoke";
   }
 
   structure(TBETable, external="yes") {
@@ -253,11 +259,18 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
         } else if (in_msg.Type == CoherenceResponseType:ACK) {
           trigger(Event:CleanReplacement, in_msg.addr, TBEs[in_msg.addr]);
         } else if (in_msg.Type == CoherenceResponseType:REGION_INV_ACK) {
-            if (is_valid(TBEs[in_msg.addr]) && TBEs[in_msg.addr].NumRegionInvAcks == 1) {
-              trigger(Event:RegionInvLastAck, in_msg.addr, TBEs[in_msg.addr]);
+          if (is_valid(TBEs[in_msg.addr]) &&
+              TBEs[in_msg.addr].NumRegionInvAcks == 1) {
+
+            if (in_msg.Dirty || TBEs[in_msg.addr].RegionDirtyOwnerSeen) {
+              trigger(Event:RegionInvLastAckDirty, in_msg.addr, TBEs[in_msg.addr]);
             } else {
-              trigger(Event:RegionInvAck, in_msg.addr, TBEs[in_msg.addr]);
+              trigger(Event:RegionInvLastAckClean, in_msg.addr, TBEs[in_msg.addr]);
             }
+
+          } else {
+            trigger(Event:RegionInvAck, in_msg.addr, TBEs[in_msg.addr]);
+          }
         } else {
           DPRINTF(RubySlicc, "%s\n", in_msg.Type);
           error("Invalid message");
@@ -542,13 +555,64 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   action(rs_clearRegionOnAck, "rsclr", desc="Clear filter after region invalidation ack") {
     peek(responseNetwork_in, ResponseMsg) {
       NodeID sender_id := machineIDToNodeID(in_msg.Sender);
-
       bloom_filter.clear(in_msg.addr, sender_id);
+
+      if (in_msg.Dirty) {
+        tbe.RegionDirtyOwnerSeen := true;
+        tbe.RegionDirtyOwner := in_msg.Sender;
+
+        Entry e := getDirectoryEntry(in_msg.addr);
+        e.Owner := in_msg.Sender;
+
+        DPRINTF(RegionScout,
+                "RS dir REGION_INV_ACK dirty owner addr=%#x owner=%s\n",
+                in_msg.addr, in_msg.Sender);
+      }
+
       tbe.NumRegionInvAcks := tbe.NumRegionInvAcks - 1;
 
       DPRINTF(RegionScout,
-              "RS dir REGION_INV_ACK addr=%#x sender=%s sender_id=%d remaining=%d\n",
-              in_msg.addr, in_msg.Sender, sender_id, tbe.NumRegionInvAcks);
+              "RS dir REGION_INV_ACK addr=%#x sender=%s sender_id=%d remaining=%d dirty_seen=%d\n",
+              in_msg.addr, in_msg.Sender, sender_id,
+              tbe.NumRegionInvAcks, tbe.RegionDirtyOwnerSeen);
+    }
+  }
+
+  action(rs_sendDirtyOwnerInv, "rsdoi", desc="Ask dirty RegionScout owner for block data") {
+    enqueue(responseNetwork_out, ResponseMsg, directory_latency) {
+      out_msg.addr := address;
+      out_msg.Type := CoherenceResponseType:INV;
+      out_msg.Sender := machineID;
+      out_msg.Destination.add(tbe.RegionDirtyOwner);
+      out_msg.MessageSize := MessageSizeType:Response_Control;
+    }
+
+    DPRINTF(RegionScout,
+            "RS dir send dirty-owner INV addr=%#x owner=%s requestor=%s\n",
+            address, tbe.RegionDirtyOwner, tbe.RegionRequestor);
+  }
+
+  action(rs_forwardDirtyOwnerDataToRequestor, "rsfwd", desc="Forward dirty owner data to requestor") {
+    peek(responseNetwork_in, ResponseMsg) {
+      enqueue(responseNetwork_out, ResponseMsg, to_mem_ctrl_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceResponseType:MEMORY_DATA;
+        out_msg.Sender := machineID;
+        out_msg.Destination.add(tbe.RegionRequestor);
+        out_msg.DataBlk := in_msg.DataBlk;
+        out_msg.Dirty := false;
+        out_msg.MessageSize := MessageSizeType:Response_Data;
+        out_msg.isRegionNS := false;
+
+        Entry e := getDirectoryEntry(address);
+        e.Owner := tbe.RegionRequestor;
+
+        bloom_filter.insert(address, machineIDToNodeID(tbe.RegionRequestor));
+
+        DPRINTF(RegionScout,
+                "RS dir forward dirty-owner DATA addr=%#x old_owner=%s new_owner=%s\n",
+                address, in_msg.Sender, tbe.RegionRequestor);
+      }
     }
   }
 
@@ -560,6 +624,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       tbe.RegionRequestor := in_msg.OriginalRequestorMachId;
       tbe.RegionDataBlk := in_msg.DataBlk;
       tbe.RegionIsNS := false;
+      tbe.RegionDirtyOwnerSeen := false;
 
       if (intToID(0) != requestor_id && bloom_filter.mayContain(in_msg.addr, intToID(0))) {
         enqueue(responseNetwork_out, ResponseMsg, directory_latency) {
@@ -622,28 +687,39 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       tbe.RegionRequestor := in_msg.Requestor;
       tbe.NumRegionInvAcks := 0;
       tbe.RegionIsNS := false;
+      tbe.RegionDirtyOwnerSeen := false;
     }
   }
 
-  action(rs_sendDelayedData, "rsdd", desc="Send delayed data after RegionScout revokes") {
-    enqueue(responseNetwork_out, ResponseMsg, to_mem_ctrl_latency) {
-      out_msg.addr := address;
-      out_msg.Type := CoherenceResponseType:MEMORY_DATA;
-      out_msg.Sender := machineID;
-      out_msg.Destination.add(tbe.RegionRequestor);
-      out_msg.DataBlk := tbe.RegionDataBlk;
-      out_msg.Dirty := false;
-      out_msg.MessageSize := MessageSizeType:Response_Data;
-      out_msg.isRegionNS := tbe.RegionIsNS;
-
-      Entry e := getDirectoryEntry(address);
-      e.Owner := tbe.RegionRequestor;
-
-      bloom_filter.insert(address, machineIDToNodeID(tbe.RegionRequestor));
-
+  action(rs_sendDataOrHandleDirtyOwner, "rsdod", desc="Send data or handle dirty RegionScout owner") {
+    if (tbe.RegionDirtyOwnerSeen) {
       DPRINTF(RegionScout,
-              "RS dir delayed DATA addr=%#x owner=%s isRegionNS=%d\n",
-              address, tbe.RegionRequestor, tbe.RegionIsNS);
+              "RS dir dirty owner fallback needed addr=%#x owner=%s requestor=%s\n",
+              address, tbe.RegionDirtyOwner, tbe.RegionRequestor);
+
+      // Temporary conservative behavior:
+      // Do NOT send memory data here, because memory may be stale.
+      // Next step is to request/forward data from tbe.RegionDirtyOwner.
+    } else {
+      enqueue(responseNetwork_out, ResponseMsg, to_mem_ctrl_latency) {
+        out_msg.addr := address;
+        out_msg.Type := CoherenceResponseType:MEMORY_DATA;
+        out_msg.Sender := machineID;
+        out_msg.Destination.add(tbe.RegionRequestor);
+        out_msg.DataBlk := tbe.RegionDataBlk;
+        out_msg.Dirty := false;
+        out_msg.MessageSize := MessageSizeType:Response_Data;
+        out_msg.isRegionNS := tbe.RegionIsNS;
+
+        Entry e := getDirectoryEntry(address);
+        e.Owner := tbe.RegionRequestor;
+
+        bloom_filter.insert(address, machineIDToNodeID(tbe.RegionRequestor));
+
+        DPRINTF(RegionScout,
+                "RS dir delayed DATA addr=%#x owner=%s isRegionNS=%d\n",
+                address, tbe.RegionRequestor, tbe.RegionIsNS);
+      }
     }
   }
 
@@ -678,9 +754,23 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       k_popIncomingResponseQueue;
   }
 
-  transition(IM_RS_WAIT, RegionInvLastAck, M) {
+  transition(IM_RS_WAIT, RegionInvLastAckClean, M) {
       rs_clearRegionOnAck;
-      rs_sendDelayedData;
+      rs_sendDataOrHandleDirtyOwner;
+      w_deallocateTBE;
+      k_popIncomingResponseQueue;
+      kd_wakeUpDependents;
+  }
+
+  transition(IM_RS_WAIT, RegionInvLastAckDirty, IM_RS_DIRTY_WAIT) {
+      rs_clearRegionOnAck;
+      rs_sendDirtyOwnerInv;
+      k_popIncomingResponseQueue;
+  }
+
+  transition(IM_RS_DIRTY_WAIT, Data, M) {
+      rs_forwardDirtyOwnerDataToRequestor;
+      rs_removeData;
       w_deallocateTBE;
       k_popIncomingResponseQueue;
       kd_wakeUpDependents;
@@ -738,7 +828,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     z_stallAndWaitRequest;
   }
 
-  transition({ID, ID_W, M_DRD, M_DRDI, M_DWR, M_DWRI, IM, IM_RS_WAIT, MI}, {DMA_WRITE, DMA_READ} ) {
+  transition({ID, ID_W, M_DRD, M_DRDI, M_DWR, M_DWRI, IM, IM_RS_WAIT, IM_RS_DIRTY_WAIT, MI}, {DMA_WRITE, DMA_READ} ) {
     zz_recycleDMAQueue;
   }
 
@@ -786,7 +876,11 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       k_popIncomingResponseQueue;
   }
 
-  transition({I, M, IM, MI}, RegionInvLastAck) {
+  transition({I, M, IM, MI}, RegionInvLastAckClean) {
+      k_popIncomingResponseQueue;
+  }
+
+  transition({I, M, IM, MI}, RegionInvLastAckDirty) {
       k_popIncomingResponseQueue;
   }
 }

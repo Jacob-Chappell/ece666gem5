@@ -954,11 +954,34 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
         out_msg.Type := CoherenceResponseType:REGION_INV_ACK;
         out_msg.Sender := machineID;
         out_msg.Destination.add(in_msg.Sender);
+
+        if (is_valid(cache_entry)) {
+          if (cache_entry.Dirty || cache_entry.CacheState == State:MT) {
+            out_msg.Dirty := true;
+          } else {
+            out_msg.Dirty := false;
+          }
+        } else {
+          out_msg.Dirty := false;
+        }
+
         out_msg.MessageSize := MessageSizeType:Response_Control;
 
-        DPRINTF(RegionScout,
-                "RS L2 send REGION_INV_ACK addr=%#x dest=%s\n",
-                address, in_msg.Sender);
+        if (is_valid(cache_entry)) {
+          DPRINTF(RegionScout,
+                  "RS L2 send REGION_INV_ACK addr=%#x valid=1 isMT=%d dirty=%d dest=%s\n",
+                  out_msg.addr,
+                  cache_entry.CacheState == State:MT,
+                  out_msg.Dirty,
+                  out_msg.Destination);
+        } else {
+          DPRINTF(RegionScout,
+                  "RS L2 send REGION_INV_ACK addr=%#x valid=0 dirty=%d dest=%s\n",
+                  out_msg.addr,
+                  out_msg.Dirty,
+                  out_msg.Destination);
+        }
+
       }
     }
   }
