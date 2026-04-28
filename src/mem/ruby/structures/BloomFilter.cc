@@ -96,37 +96,6 @@ BloomFilter::clear(Addr addr, int proc_id)
 }
 
 int
-BloomFilter::firstPossibleHolder(Addr addr, int requestor_id) const
-{
-    for (int i = 0; i < NumProcs; i++) {
-        if (i == requestor_id)
-            continue;
-
-        if (mayContain(addr, i)) {
-            DPRINTF(RegionScout,
-                    "BloomFilter firstPossibleHolder addr=%#x holder=%d\n",
-                    addr, i);
-            return i;
-        }
-    }
-
-    return -1;
-}
-
-bool BloomFilter::hasPossibleHolder(Addr addr, int requestor_id) const
-{
-    for (int i = 0; i < NumProcs; i++) {
-        if (i == requestor_id)
-            continue;
-
-        if (mayContain(addr, i))
-            return true;
-    }
-
-    return false;
-}
-
-int
 BloomFilter::countPossibleHolders(Addr addr, int requestor_id) const
 {
     int count = 0;
@@ -140,20 +109,6 @@ BloomFilter::countPossibleHolders(Addr addr, int requestor_id) const
     }
 
     return count;
-}
-
-int
-BloomFilter::nextPossibleHolder(Addr addr, int requestor_id, int start) const
-{
-    for (int i = start; i < NumProcs; i++) {
-        if (i == requestor_id)
-            continue;
-
-        if (mayContain(addr, i))
-            return i;
-    }
-
-    return -1;
 }
 
 }

@@ -87,7 +87,6 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     void remove(Addr, NodeID);
     void clear(Addr, NodeID);
     int countPossibleHolders(Addr, NodeID);
-    int nextPossibleHolder(Addr, NodeID, int);
     bool mayContain(Addr, NodeID);
     bool isRegionNotShared(Addr, NodeID);
   }
@@ -254,7 +253,11 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
         } else if (in_msg.Type == CoherenceResponseType:ACK) {
           trigger(Event:CleanReplacement, in_msg.addr, TBEs[in_msg.addr]);
         } else if (in_msg.Type == CoherenceResponseType:REGION_INV_ACK) {
-          trigger(Event:RegionInvAck, in_msg.addr, TBEs[in_msg.addr]);
+            if (is_valid(TBEs[in_msg.addr]) && TBEs[in_msg.addr].NumRegionInvAcks == 1) {
+              trigger(Event:RegionInvLastAck, in_msg.addr, TBEs[in_msg.addr]);
+            } else {
+              trigger(Event:RegionInvAck, in_msg.addr, TBEs[in_msg.addr]);
+            }
         } else {
           DPRINTF(RubySlicc, "%s\n", in_msg.Type);
           error("Invalid message");
@@ -268,7 +271,18 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     if (memQueue_in.isReady(clockEdge())) {
       peek(memQueue_in, MemoryMsg) {
         if (in_msg.Type == MemoryRequestType:MEMORY_READ) {
-          trigger(Event:Memory_Data, in_msg.addr, TBEs[in_msg.addr]);
+          if (getState(TBEs[in_msg.addr], in_msg.addr) == State:IM) {
+            NodeID requestor_id := machineIDToNodeID(in_msg.OriginalRequestorMachId);
+            int revoke_count := bloom_filter.countPossibleHolders(in_msg.addr, requestor_id);
+
+            if (revoke_count > 0) {
+              trigger(Event:Memory_Data_Revoke, in_msg.addr, TBEs[in_msg.addr]);
+            } else {
+              trigger(Event:Memory_Data_NoRevoke, in_msg.addr, TBEs[in_msg.addr]);
+            }
+          } else {
+            trigger(Event:Memory_Data, in_msg.addr, TBEs[in_msg.addr]);
+          }
         } else if (in_msg.Type == MemoryRequestType:MEMORY_WB) {
           trigger(Event:Memory_Ack, in_msg.addr, TBEs[in_msg.addr]);
         } else {
@@ -528,32 +542,108 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   action(rs_clearRegionOnAck, "rsclr", desc="Clear filter after region invalidation ack") {
     peek(responseNetwork_in, ResponseMsg) {
       NodeID sender_id := machineIDToNodeID(in_msg.Sender);
+
       bloom_filter.clear(in_msg.addr, sender_id);
+      tbe.NumRegionInvAcks := tbe.NumRegionInvAcks - 1;
 
       DPRINTF(RegionScout,
-              "RS dir REGION_INV_ACK addr=%#x sender=%s sender_id=%d\n",
-              in_msg.addr, in_msg.Sender, sender_id);
+              "RS dir REGION_INV_ACK addr=%#x sender=%s sender_id=%d remaining=%d\n",
+              in_msg.addr, in_msg.Sender, sender_id, tbe.NumRegionInvAcks);
     }
   }
 
-  action(rs_sendRegionInvs, "rsinv", desc="Send RegionScout region invalidations") {
+  action(rs_sendAllRegionInvs, "rsall", desc="Send all RegionScout region invalidations") {
     peek(memQueue_in, MemoryMsg) {
       NodeID requestor_id := machineIDToNodeID(in_msg.OriginalRequestorMachId);
-      int holder := bloom_filter.firstPossibleHolder(in_msg.addr, requestor_id);
 
-      if (holder >= 0) {
+      tbe.NumRegionInvAcks := 0;
+      tbe.RegionRequestor := in_msg.OriginalRequestorMachId;
+      tbe.RegionDataBlk := in_msg.DataBlk;
+      tbe.RegionIsNS := false;
+
+      if (intToID(0) != requestor_id && bloom_filter.mayContain(in_msg.addr, intToID(0))) {
         enqueue(responseNetwork_out, ResponseMsg, directory_latency) {
           out_msg.addr := in_msg.addr;
           out_msg.Type := CoherenceResponseType:REGION_INV;
           out_msg.Sender := machineID;
-          out_msg.Destination.add(createMachineID(MachineType:L2Cache, intToID(holder)));
+          out_msg.Destination.add(createMachineID(MachineType:L2Cache, intToID(0)));
           out_msg.MessageSize := MessageSizeType:Response_Control;
         }
-
-        DPRINTF(RegionScout,
-                "RS dir send REGION_INV addr=%#x holder=%d requestor=%d\n",
-                in_msg.addr, holder, requestor_id);
+        tbe.NumRegionInvAcks := tbe.NumRegionInvAcks + 1;
       }
+
+      if (intToID(1) != requestor_id && bloom_filter.mayContain(in_msg.addr, intToID(1))) {
+        enqueue(responseNetwork_out, ResponseMsg, directory_latency) {
+          out_msg.addr := in_msg.addr;
+          out_msg.Type := CoherenceResponseType:REGION_INV;
+          out_msg.Sender := machineID;
+          out_msg.Destination.add(createMachineID(MachineType:L2Cache, intToID(1)));
+          out_msg.MessageSize := MessageSizeType:Response_Control;
+        }
+        tbe.NumRegionInvAcks := tbe.NumRegionInvAcks + 1;
+      }
+
+      if (intToID(2) != requestor_id && bloom_filter.mayContain(in_msg.addr, intToID(2))) {
+        enqueue(responseNetwork_out, ResponseMsg, directory_latency) {
+          out_msg.addr := in_msg.addr;
+          out_msg.Type := CoherenceResponseType:REGION_INV;
+          out_msg.Sender := machineID;
+          out_msg.Destination.add(createMachineID(MachineType:L2Cache, intToID(2)));
+          out_msg.MessageSize := MessageSizeType:Response_Control;
+        }
+        tbe.NumRegionInvAcks := tbe.NumRegionInvAcks + 1;
+      }
+
+      if (intToID(3) != requestor_id && bloom_filter.mayContain(in_msg.addr, intToID(3))) {
+        enqueue(responseNetwork_out, ResponseMsg, directory_latency) {
+          out_msg.addr := in_msg.addr;
+          out_msg.Type := CoherenceResponseType:REGION_INV;
+          out_msg.Sender := machineID;
+          out_msg.Destination.add(createMachineID(MachineType:L2Cache, intToID(3)));
+          out_msg.MessageSize := MessageSizeType:Response_Control;
+        }
+        tbe.NumRegionInvAcks := tbe.NumRegionInvAcks + 1;
+      }
+
+      DPRINTF(RegionScout,
+              "RS dir sent REGION_INVs addr=%#x requestor=%d outstanding=%d\n",
+              in_msg.addr, requestor_id, tbe.NumRegionInvAcks);
+
+    }
+  }
+
+  action(rs_allocateFetchTBE, "rsat", desc="Allocate TBE for RegionScout fetch") {
+    peek(requestNetwork_in, RequestMsg) {
+      TBEs.allocate(address);
+      set_tbe(TBEs[address]);
+
+      tbe.PhysicalAddress := in_msg.addr;
+      tbe.Requestor := in_msg.Requestor;
+      tbe.RegionRequestor := in_msg.Requestor;
+      tbe.NumRegionInvAcks := 0;
+      tbe.RegionIsNS := false;
+    }
+  }
+
+  action(rs_sendDelayedData, "rsdd", desc="Send delayed data after RegionScout revokes") {
+    enqueue(responseNetwork_out, ResponseMsg, to_mem_ctrl_latency) {
+      out_msg.addr := address;
+      out_msg.Type := CoherenceResponseType:MEMORY_DATA;
+      out_msg.Sender := machineID;
+      out_msg.Destination.add(tbe.RegionRequestor);
+      out_msg.DataBlk := tbe.RegionDataBlk;
+      out_msg.Dirty := false;
+      out_msg.MessageSize := MessageSizeType:Response_Data;
+      out_msg.isRegionNS := tbe.RegionIsNS;
+
+      Entry e := getDirectoryEntry(address);
+      e.Owner := tbe.RegionRequestor;
+
+      bloom_filter.insert(address, machineIDToNodeID(tbe.RegionRequestor));
+
+      DPRINTF(RegionScout,
+              "RS dir delayed DATA addr=%#x owner=%s isRegionNS=%d\n",
+              address, tbe.RegionRequestor, tbe.RegionIsNS);
     }
   }
 
@@ -561,8 +651,9 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   // TRANSITIONS
 
   transition(I, Fetch, IM) {
-    qf_queueMemoryFetchRequest;
-    j_popIncomingRequestQueue;
+      rs_allocateFetchTBE;
+      qf_queueMemoryFetchRequest;
+      j_popIncomingRequestQueue;
   }
 
   transition(M, Fetch) {
@@ -570,13 +661,31 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     z_stallAndWaitRequest;
   }
 
-  transition(IM, Memory_Data, M) {
-    // rs_checkrequestorRegion;
-    rs_sendRegionInvs;
-    d_sendData;
-    l_popMemQueue;
-    kd_wakeUpDependents;
+  transition(IM, Memory_Data_NoRevoke, M) {
+      d_sendData;
+      w_deallocateTBE;
+      l_popMemQueue;
+      kd_wakeUpDependents;
   }
+
+  transition(IM, Memory_Data_Revoke, IM_RS_WAIT) {
+      rs_sendAllRegionInvs;
+      l_popMemQueue;
+  }
+
+  transition(IM_RS_WAIT, RegionInvAck) {
+      rs_clearRegionOnAck;
+      k_popIncomingResponseQueue;
+  }
+
+  transition(IM_RS_WAIT, RegionInvLastAck, M) {
+      rs_clearRegionOnAck;
+      rs_sendDelayedData;
+      w_deallocateTBE;
+      k_popIncomingResponseQueue;
+      kd_wakeUpDependents;
+  }
+
 //added by SS
   transition(M, CleanReplacement, I) {
     rs_removeCleanReplacement;
@@ -625,11 +734,11 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     kd_wakeUpDependents;
   }
 
-  transition({ID, ID_W, M_DRDI, M_DWRI, IM, MI}, {Fetch, Data} ) {
+  transition({ID, ID_W, M_DRDI, M_DWRI, IM, IM_RS_WAIT, MI}, {Fetch, Data} ) {
     z_stallAndWaitRequest;
   }
 
-  transition({ID, ID_W, M_DRD, M_DRDI, M_DWR, M_DWRI, IM, MI}, {DMA_WRITE, DMA_READ} ) {
+  transition({ID, ID_W, M_DRD, M_DRDI, M_DWR, M_DWRI, IM, IM_RS_WAIT, MI}, {DMA_WRITE, DMA_READ} ) {
     zz_recycleDMAQueue;
   }
 
@@ -674,7 +783,10 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
   // RegionScout Transitions
   transition({I, M, IM, MI}, RegionInvAck) {
-    rs_clearRegionOnAck;
-    k_popIncomingResponseQueue;
+      k_popIncomingResponseQueue;
+  }
+
+  transition({I, M, IM, MI}, RegionInvLastAck) {
+      k_popIncomingResponseQueue;
   }
 }
