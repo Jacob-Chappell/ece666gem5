@@ -94,6 +94,7 @@ structure(RequestMsg, desc="...", interface="Message") {
   NetDest Destination,             desc="Multicast destination mask";
   MessageSizeType MessageSize, desc="size category of the message";
   bool DirectedProbe, default="false", desc="probe filter directed probe";
+  bool BroadcastInhibit, default="false", desc="RegionScout not shared blocks";
 
   Cycles InitialRequestTime, default="Cycles(0)",
         desc="time the initial requests was sent from the L1Cache";
@@ -123,6 +124,7 @@ structure(ResponseMsg, desc="...", interface="Message") {
   bool Dirty,                  desc="Is the data dirty (different than memory)?";
   int Acks, default="0",    desc="How many messages this counts as";
   MessageSizeType MessageSize, desc="size category of the message";
+  bool RegionNS, default="false", desc="Region for address not shared";
 
   Cycles InitialRequestTime, default="Cycles(0)",
         desc="time the initial requests was sent from the L1Cache";

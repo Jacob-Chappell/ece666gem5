@@ -91,7 +91,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     MT, AccessPermission:Busy, "MT", desc="M block transferring to L1";
     MMT, AccessPermission:Busy, "MMT", desc="MM block transferring to L0";
 
-    //Transition States Related to Flushing
+    //Transition States Related to Flushing;
     MI_F, AccessPermission:Busy, "MI_F", desc="Issued PutX due to a Flush, waiting for ack";
     MM_F, AccessPermission:Busy, "MM_F", desc="Issued GETF due to a Flush, waiting for ack";
     IM_F, AccessPermission:Busy, "IM_F", desc="Issued GetX due to a Flush";
@@ -160,6 +160,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     MachineID LastResponder, desc="last machine to send a response for this request";
     MachineID CurOwner,      desc="current owner of the block, used for UnblockS responses";
 
+    bool RegionNS, default="true", desc="is the region not shared";
+
     Cycles InitialRequestTime, default="Cycles(0)",
             desc="time the initial requests was sent from the L1Cache";
     Cycles ForwardRequestTime, default="Cycles(0)",
@@ -175,6 +177,18 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     bool isPresent(Addr);
   }
 
+  structure(NotSharedTable, external="yes") {
+    bool isInTable(Addr);
+    void insertRegion(Addr);
+    void invalidateRegion(Addr);
+  }
+
+  structure(BloomFilter, external="yes") {
+    void insert(Addr, int);
+    void remove(Addr, int);
+    bool isRegionNotShared(Addr, int);
+  }
+
   TBETable TBEs, template="<L1Cache_TBE>", constructor="m_number_of_TBEs";
 
   Tick clockEdge();
@@ -186,6 +200,9 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   void wakeUpBuffers(Addr a);
   Cycles curCycle();
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
+
+  NotSharedTable nsrt;
+  BloomFilter crh;
 
   Entry getCacheEntry(Addr address), return_by_pointer="yes" {
     Entry L2cache_entry := static_cast(Entry, "pointer", L2cache.lookup(address));
@@ -559,9 +576,14 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
       out_msg.MessageSize := MessageSizeType:Request_Control;
       out_msg.InitialRequestTime := curCycle();
+      out_msg.BroadcastInhibit := nsrt.isInTable(address);
 
       // One from each other cache (n-1) plus the memory (+1)
-      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      if (nsrt.isInTable(address)) {
+        tbe.NumPendingMsgs := 1;
+      } else {
+        tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      }
     }
   }
 
@@ -574,9 +596,14 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
       out_msg.MessageSize := MessageSizeType:Request_Control;
       out_msg.InitialRequestTime := curCycle();
+      out_msg.BroadcastInhibit := nsrt.isInTable(address);
 
       // One from each other cache (n-1) plus the memory (+1)
-      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      if (nsrt.isInTable(address)) {
+        tbe.NumPendingMsgs := 1;
+      } else {
+        tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      }
     }
   }
 
@@ -590,11 +617,16 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
         out_msg.MessageSize := MessageSizeType:Request_Control;
         out_msg.InitialRequestTime := curCycle();
+        out_msg.BroadcastInhibit := nsrt.isInTable(address);
       }
     }
 
     // One from each other cache (n-1) plus the memory (+1)
-    tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+    if (nsrt.isInTable(address)) {
+      tbe.NumPendingMsgs := 1;
+    } else {
+      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+    }
   }
 
   action(bf_issueGETF, "bf", desc="Issue GETF") {
@@ -606,9 +638,14 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       out_msg.Destination.add(mapAddressToMachine(address, MachineType:Directory));
       out_msg.MessageSize := MessageSizeType:Request_Control;
       out_msg.InitialRequestTime := curCycle();
+      out_msg.BroadcastInhibit := nsrt.isInTable(address);
 
       // One from each other cache (n-1) plus the memory (+1)
-      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      if (nsrt.isInTable(address)) {
+        tbe.NumPendingMsgs := 1;
+      } else {
+        tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      }
     }
   }
 
@@ -631,6 +668,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -654,6 +692,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -697,6 +736,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -721,6 +761,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -745,6 +786,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -765,6 +807,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -785,6 +828,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -802,6 +846,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Control;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := crh.isRegionNotShared(address, 0);
       }
     }
   }
@@ -819,6 +864,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Response_Control;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
+        out_msg.RegionNS := false;
       }
     }
   }
@@ -1037,6 +1083,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         if (tbe.Sharers) {
           out_msg.Type := TriggerType:ALL_ACKS;
         } else {
+          if (tbe.RegionNS) { nsrt.insertRegion(address); }
           out_msg.Type := TriggerType:ALL_ACKS_NO_SHARERS;
         }
       }
@@ -1147,6 +1194,13 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   action(r_setSharerBit, "r", desc="We saw other sharers") {
     assert(is_valid(tbe));
     tbe.Sharers := true;
+  }
+
+  action(rssn_setRegionNSBit, "rssn", desc="see if other processor has block from region") {
+    assert(is_valid(tbe));
+    peek(responseToCache_in, ResponseMsg) {
+      tbe.RegionNS := tbe.RegionNS && in_msg.RegionNS;
+    }
   }
 
   action(s_deallocateTBE, "s", desc="Deallocate TBE") {
@@ -1306,6 +1360,18 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     wakeUpAllBuffers();
   }
 
+  action(rsic_incCRH, "rsic", desc="RS: Increase CRH count for address") {
+    crh.insert(address, 0);
+  }
+
+  action(rsdc_decCRH, "rsdc", desc="RS: Decrese CRH count for address") {
+    crh.remove(address, 0);
+  }
+
+  action(rsin_invNSRT, "rsin", desc="RS: invalidate NSRT") {
+    nsrt.invalidateRegion(address);
+  }
+
   //*****************************************************
   // TRANSITIONS
   //*****************************************************
@@ -1340,10 +1406,12 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition({ST, OT, MT, MMT}, {Other_GETX, NC_DMA_GETS, Other_GETS, Merged_GETS, Other_GETS_No_Mig, Invalidate, Flush_line}) {
+    rsin_invNSRT;
     z_stall;
   }
 
   transition({IR, SR, OR, MR, MMR}, {Other_GETX, NC_DMA_GETS, Other_GETS, Merged_GETS, Other_GETS_No_Mig, Invalidate}) {
+    rsin_invNSRT;
     z_stall;
   }
 
@@ -1461,6 +1529,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     ii_allocateL1DCacheBlock;
     i_allocateTBE;
     a_issueGETS;
+    rsic_incCRH;
     uu_profileL1DataMiss;
     uu_profileL2Miss;
     k_popMandatoryQueue;
@@ -1470,6 +1539,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     jj_allocateL1ICacheBlock;
     i_allocateTBE;
     a_issueGETS;
+    rsic_incCRH;
     uu_profileL1InstMiss;
     uu_profileL2Miss;
     k_popMandatoryQueue;
@@ -1479,6 +1549,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     ii_allocateL1DCacheBlock;
     i_allocateTBE;
     b_issueGETX;
+    rsic_incCRH;
     uu_profileL1DataMiss;
     uu_profileL2Miss;
     k_popMandatoryQueue;
@@ -1492,6 +1563,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition(I, {Other_GETX, NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig, Invalidate}) {
     f_sendAck;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1537,6 +1609,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     bf_issueGETF;
     forward_eviction_to_cpu;
     gg_deallocateL1CacheBlock;
+    rsdc_decCRH;
     k_popMandatoryQueue;
   }
 
@@ -1547,6 +1620,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition(S, {Other_GETX, Invalidate}, I) {
+    rsdc_decCRH;
+    rsin_invNSRT;
     f_sendAck;
     forward_eviction_to_cpu;
     gr_deallocateCacheBlock;
@@ -1555,6 +1630,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition(S, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}) {
     ff_sendAckShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1602,6 +1678,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     p_decrementNumberOfMessagesByOne;
     forward_eviction_to_cpu;
     gg_deallocateL1CacheBlock;
+    rsdc_decCRH;
     k_popMandatoryQueue;
   }
 
@@ -1614,6 +1691,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition(O, {Other_GETX, Invalidate}, I) {
+    rsdc_decCRH;
+    rsin_invNSRT;
     e_sendData;
     forward_eviction_to_cpu;
     gr_deallocateCacheBlock;
@@ -1622,11 +1701,13 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition(O, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}) {
     ee_sendDataShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(O, Merged_GETS) {
     em_sendDataSharedMultiple;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1679,6 +1760,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     p_decrementNumberOfMessagesByOne;
     forward_eviction_to_cpu;
     gg_deallocateL1CacheBlock;
+    rsdc_decCRH;
     k_popMandatoryQueue;
   }
 
@@ -1697,6 +1779,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition(MM, {Other_GETX, Invalidate}, I) {
+    rsdc_decCRH;
+    rsin_invNSRT;
     c_sendExclusiveData;
     forward_eviction_to_cpu;
     gr_deallocateCacheBlock;
@@ -1707,21 +1791,26 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     c_sendExclusiveData;
     forward_eviction_to_cpu;
     gr_deallocateCacheBlock;
+    rsdc_decCRH;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(MM, NC_DMA_GETS, O) {
     ee_sendDataShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(MM, Other_GETS_No_Mig, O) {
     ee_sendDataShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(MM, Merged_GETS, O) {
     em_sendDataSharedMultiple;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1765,6 +1854,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition(M, {Other_GETX, Invalidate}, I) {
+    rsdc_decCRH;
+    rsin_invNSRT;
     c_sendExclusiveData;
     forward_eviction_to_cpu;
     gr_deallocateCacheBlock;
@@ -1773,16 +1864,19 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition(M, {Other_GETS, Other_GETS_No_Mig}, O) {
     ee_sendDataShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(M, NC_DMA_GETS, O) {
     ee_sendDataShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(M, Merged_GETS, O) {
     em_sendDataSharedMultiple;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1790,6 +1884,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition({IM, IM_F}, {Other_GETX, NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig, Invalidate}) {
     f_sendAck;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1832,17 +1927,20 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   // Transitions from SM
   transition({SM, SM_F}, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}) {
     ff_sendAckShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(SM, {Other_GETX, Invalidate}, IM) {
     f_sendAck;
+    rsin_invNSRT;
     forward_eviction_to_cpu;
     l_popForwardQueue;
   }
 
   transition(SM_F, {Other_GETX, Invalidate}, IM_F) {
     f_sendAck;
+    rsin_invNSRT;
     forward_eviction_to_cpu;
     l_popForwardQueue;
   }
@@ -1894,6 +1992,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     e_sendData;
     pp_incrementNumberOfMessagesByOne;
     forward_eviction_to_cpu;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1901,26 +2000,31 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     q_sendDataFromTBEToCache;
     pp_incrementNumberOfMessagesByOne;
     forward_eviction_to_cpu;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(OM, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}) {
     ee_sendDataShared;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(OM, Merged_GETS) {
     em_sendDataSharedMultiple;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(OM_F, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}) {
     et_sendDataSharedFromTBE;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(OM_F, Merged_GETS) {
     emt_sendDataSharedMultipleFromTBE;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -1947,6 +2051,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition(IS, {Other_GETX, NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig, Invalidate}) {
     f_sendAck;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -2074,16 +2179,19 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition({OI, MI}, {Other_GETX, Invalidate}, II) {
     q_sendDataFromTBEToCache;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition({OI, MI}, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}, OI) {
     sq_sendSharedDataFromTBEToCache;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition({OI, MI}, Merged_GETS, OI) {
     qm_sendDataFromTBEToCache;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -2112,6 +2220,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   // Transitions from II
   transition(II, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig, Other_GETX, Invalidate}, II) {
     f_sendAck;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -2131,12 +2240,14 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   transition(MM_F, {Other_GETX, Invalidate}, IM_F) {
     ct_sendExclusiveDataFromTBE;
     pp_incrementNumberOfMessagesByOne;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(MM_F, Other_GETS, IM_F) {
     ct_sendExclusiveDataFromTBE;
     pp_incrementNumberOfMessagesByOne;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
@@ -2147,11 +2258,13 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   transition(MM_F, Other_GETS_No_Mig, OM_F) {
     et_sendDataSharedFromTBE;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 
   transition(MM_F, Merged_GETS, OM_F) {
     emt_sendDataSharedMultipleFromTBE;
+    rsin_invNSRT;
     l_popForwardQueue;
   }
 }
