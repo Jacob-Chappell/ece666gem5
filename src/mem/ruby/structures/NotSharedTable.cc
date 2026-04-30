@@ -25,6 +25,9 @@ NotSharedTable::isInTable(Addr address)
 void
 NotSharedTable::insertRegion(Addr address)
 {
+    if (std::count(this->m_region_list.begin(), this->m_region_list.end(), address) != 0) {
+        return;
+    }
     address = this->toRegion(address);
     this->m_region_list.push_back(address);
     if(this->m_region_list.size() >= RS_REGION_SIZE) {
