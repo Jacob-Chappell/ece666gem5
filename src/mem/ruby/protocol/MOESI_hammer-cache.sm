@@ -183,7 +183,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     void invalidateRegion(Addr);
   }
 
-  structure(BloomFilter, external="yes") {
+  structure(RegionScoutFilter, external="yes") {
     void insert(Addr, int);
     void remove(Addr, int);
     bool isRegionNotShared(Addr, int);
@@ -202,7 +202,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
 
   NotSharedTable nsrt;
-  BloomFilter crh;
+  RegionScoutFilter crh;
 
   Entry getCacheEntry(Addr address), return_by_pointer="yes" {
     Entry L2cache_entry := static_cast(Entry, "pointer", L2cache.lookup(address));
@@ -577,13 +577,17 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       out_msg.MessageSize := MessageSizeType:Request_Control;
       out_msg.InitialRequestTime := curCycle();
       out_msg.BroadcastInhibit := nsrt.isInTable(address);
+      // out_msg.BroadcastInhibit := false;
 
       // One from each other cache (n-1) plus the memory (+1)
-      if (nsrt.isInTable(address)) {
-        tbe.NumPendingMsgs := 1;
-      } else {
-        tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
-      }
+      // if (nsrt.isInTable(address)) {
+      //   tbe.NumPendingMsgs := 1;
+      // } else {
+      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      DPRINTF(RubySlicc,
+        "RS_REQ addr=%#x type=GETS inhibit=%d pending=%d\n",
+        address, out_msg.BroadcastInhibit, tbe.NumPendingMsgs);
+      // }
     }
   }
 
@@ -597,13 +601,18 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       out_msg.MessageSize := MessageSizeType:Request_Control;
       out_msg.InitialRequestTime := curCycle();
       out_msg.BroadcastInhibit := nsrt.isInTable(address);
+      // out_msg.BroadcastInhibit := false;
 
       // One from each other cache (n-1) plus the memory (+1)
-      if (nsrt.isInTable(address)) {
-        tbe.NumPendingMsgs := 1;
-      } else {
-        tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
-      }
+      // if (nsrt.isInTable(address)) {
+      //   tbe.NumPendingMsgs := 1;
+      // } else {
+      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+
+      DPRINTF(RubySlicc,
+        "RS_REQ addr=%#x type=GETX inhibit=%d pending=%d\n",
+        address, out_msg.BroadcastInhibit, tbe.NumPendingMsgs);
+      // }
     }
   }
 
@@ -618,15 +627,19 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.MessageSize := MessageSizeType:Request_Control;
         out_msg.InitialRequestTime := curCycle();
         out_msg.BroadcastInhibit := nsrt.isInTable(address);
+        // out_msg.BroadcastInhibit := false;
       }
     }
 
     // One from each other cache (n-1) plus the memory (+1)
-    if (nsrt.isInTable(address)) {
-      tbe.NumPendingMsgs := 1;
-    } else {
-      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
-    }
+    // if (nsrt.isInTable(address)) {
+    //   tbe.NumPendingMsgs := 1;
+    // } else {
+    tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+    DPRINTF(RubySlicc,
+        "RS_REQ addr=%#x type=GETX_IF_MORE_THAN_ONE inhibit=%d pending=%d\n",
+        address, nsrt.isInTable(address), tbe.NumPendingMsgs);
+    // }
   }
 
   action(bf_issueGETF, "bf", desc="Issue GETF") {
@@ -639,13 +652,17 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       out_msg.MessageSize := MessageSizeType:Request_Control;
       out_msg.InitialRequestTime := curCycle();
       out_msg.BroadcastInhibit := nsrt.isInTable(address);
+      // out_msg.BroadcastInhibit := false;
 
       // One from each other cache (n-1) plus the memory (+1)
-      if (nsrt.isInTable(address)) {
-        tbe.NumPendingMsgs := 1;
-      } else {
-        tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
-      }
+      // if (nsrt.isInTable(address)) {
+      //   tbe.NumPendingMsgs := 1;
+      // } else {
+      tbe.NumPendingMsgs := machineCount(MachineType:L1Cache);
+      DPRINTF(RubySlicc,
+        "RS_REQ addr=%#x type=GETF inhibit=%d pending=%d\n",
+        address, out_msg.BroadcastInhibit, tbe.NumPendingMsgs);
+      // }
     }
   }
 
@@ -1083,7 +1100,10 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         if (tbe.Sharers) {
           out_msg.Type := TriggerType:ALL_ACKS;
         } else {
-          if (tbe.RegionNS) { nsrt.insertRegion(address); }
+          DPRINTF(RubySlicc,
+                  "RS_NSRT_DECIDE addr=%#x state=%s sharers=%d regionNS=%d\n",
+                  address, tbe.TBEState, tbe.Sharers, tbe.RegionNS);
+
           out_msg.Type := TriggerType:ALL_ACKS_NO_SHARERS;
         }
       }
@@ -1200,6 +1220,20 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
     assert(is_valid(tbe));
     peek(responseToCache_in, ResponseMsg) {
       tbe.RegionNS := tbe.RegionNS && in_msg.RegionNS;
+    }
+  }
+
+  action(rsni_insertNSRTIfRegionNS, "rsni", desc="RS: insert NSRT if region is not shared") {
+    assert(is_valid(tbe));
+    DPRINTF(RubySlicc,
+            "RS_NSRT_FINAL addr=%#x tbe_state=%s regionNS=%d sharers=%d\n",
+            address, tbe.TBEState, tbe.RegionNS, tbe.Sharers);
+
+    if (tbe.RegionNS) {
+      DPRINTF(RubySlicc,
+              "RS_NSRT_INSERT addr=%#x final_state_insert=1 tbe_state=%s regionNS=%d\n",
+              address, tbe.TBEState, tbe.RegionNS);
+      nsrt.insertRegion(address);
     }
   }
 
@@ -1889,41 +1923,45 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition({IM, IM_F, MM_F}, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(IM, Data, ISM) {
-    u_writeDataToCache;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      u_writeDataToCache;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(IM_F, Data, ISM_F) {
       uf_writeDataToCacheTBE;
+      rssn_setRegionNSBit;
       m_decrementNumberOfMessages;
       o_checkForCompletion;
       n_popResponseQueue;
   }
 
   transition(IM, Exclusive_Data, MM_W) {
-    u_writeDataToCache;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    sx_external_store_hit;
-    n_popResponseQueue;
-    kd_wakeUpDependents;
+      u_writeDataToCache;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      sx_external_store_hit;
+      n_popResponseQueue;
+      kd_wakeUpDependents;
   }
 
   transition(IM_F, Exclusive_Data, MM_WF) {
       uf_writeDataToCacheTBE;
+      rssn_setRegionNSBit;
       m_decrementNumberOfMessages;
       o_checkForCompletion;
       n_popResponseQueue;
   }
-
   // Transitions from SM
   transition({SM, SM_F}, {NC_DMA_GETS, Other_GETS, Other_GETS_No_Mig}) {
     ff_sendAckShared;
@@ -1946,35 +1984,40 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition({SM, SM_F}, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(SM, {Data, Exclusive_Data}, ISM) {
-    v_writeDataToCacheVerify;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      v_writeDataToCacheVerify;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(SM_F, {Data, Exclusive_Data}, ISM_F) {
-    vt_writeDataToTBEVerify;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      vt_writeDataToTBEVerify;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   // Transitions from ISM
   transition({ISM, ISM_F}, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(ISM, All_acks_no_sharers, MM) {
     sxt_trig_ext_store_hit;
     gm_sendUnblockM;
+    rsni_insertNSRTIfRegionNS;
     s_deallocateTBE;
     j_popTriggerQueue;
     kd_wakeUpDependents;
@@ -2029,9 +2072,10 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition({OM, OM_F}, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(OM, {All_acks, All_acks_no_sharers}, MM) {
@@ -2056,61 +2100,67 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition(IS, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(IS, Shared_Ack) {
-    m_decrementNumberOfMessages;
-    r_setSharerBit;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      r_setSharerBit;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(IS, Data, SS) {
-    u_writeDataToCache;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    hx_external_load_hit;
-    uo_updateCurrentOwner;
-    n_popResponseQueue;
-    kd_wakeUpDependents;
+      u_writeDataToCache;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      hx_external_load_hit;
+      uo_updateCurrentOwner;
+      n_popResponseQueue;
+      kd_wakeUpDependents;
   }
 
   transition(IS, Exclusive_Data, M_W) {
-    u_writeDataToCache;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    hx_external_load_hit;
-    n_popResponseQueue;
-    kd_wakeUpDependents;
+      u_writeDataToCache;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      hx_external_load_hit;
+      n_popResponseQueue;
+      kd_wakeUpDependents;
   }
 
   transition(IS, Shared_Data, SS) {
-    u_writeDataToCache;
-    r_setSharerBit;
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    hx_external_load_hit;
-    uo_updateCurrentOwner;
-    n_popResponseQueue;
-    kd_wakeUpDependents;
+      u_writeDataToCache;
+      rssn_setRegionNSBit;
+      r_setSharerBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      hx_external_load_hit;
+      uo_updateCurrentOwner;
+      n_popResponseQueue;
+      kd_wakeUpDependents;
   }
-
   // Transitions from SS
 
   transition(SS, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(SS, Shared_Ack) {
-    m_decrementNumberOfMessages;
-    r_setSharerBit;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      r_setSharerBit;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(SS, All_acks, S) {
@@ -2123,6 +2173,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   transition(SS, All_acks_no_sharers, S) {
     // Note: The directory might still be the owner, so that is why we go to S
     gs_sendUnblockS;
+    rsni_insertNSRTIfRegionNS;
     s_deallocateTBE;
     j_popTriggerQueue;
     kd_wakeUpDependents;
@@ -2137,13 +2188,15 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition({MM_W, MM_WF}, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(MM_W, All_acks_no_sharers, MM) {
     gm_sendUnblockM;
+    rsni_insertNSRTIfRegionNS;
     s_deallocateTBE;
     j_popTriggerQueue;
     kd_wakeUpDependents;
@@ -2163,13 +2216,15 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   }
 
   transition(M_W, Ack) {
-    m_decrementNumberOfMessages;
-    o_checkForCompletion;
-    n_popResponseQueue;
+      rssn_setRegionNSBit;
+      m_decrementNumberOfMessages;
+      o_checkForCompletion;
+      n_popResponseQueue;
   }
 
   transition(M_W, All_acks_no_sharers, M) {
     gm_sendUnblockM;
+    rsni_insertNSRTIfRegionNS;
     s_deallocateTBE;
     j_popTriggerQueue;
     kd_wakeUpDependents;

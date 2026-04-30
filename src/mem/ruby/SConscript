@@ -123,6 +123,7 @@ MakeInclude('structures/TimerTable.hh')
 MakeInclude('structures/WireBuffer.hh')
 MakeInclude('structures/NotSharedTable.hh')
 MakeInclude('structures/RegionScoutFilter.hh')
+MakeInclude('structures/RegionScoutStatistics.hh')
 MakeInclude('system/DMASequencer.hh')
 MakeInclude('system/Sequencer.hh')
 
