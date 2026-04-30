@@ -392,7 +392,7 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
           } else if (in_msg.Type == CoherenceResponseType:REGION_INV) {
               nsrt.invalidateRegion(in_msg.addr);
 
-              DPRINTF(RegionScout,
+              DPRINTF(RSDebug,
                       "RS L2 REGION_INV addr=%#x sender=%s\n",
                       in_msg.addr, in_msg.Sender);
 
@@ -705,12 +705,12 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
       if (in_msg.Dirty) {
         cache_entry.Dirty := in_msg.Dirty;
       }
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
               "RS L2 recv data addr=%#x isRegionNS=%d\n",
               in_msg.addr, in_msg.isRegionNS);
 
       if (in_msg.isRegionNS) {
-        DPRINTF(RegionScout,
+        DPRINTF(RSDebug,
                 "RS L2 NSRT insert addr=%#x\n",
                 in_msg.addr);
         nsrt.insertRegion(in_msg.addr);
@@ -968,14 +968,14 @@ machine(MachineType:L2Cache, "MESI Directory L2 Cache CMP")
         out_msg.MessageSize := MessageSizeType:Response_Control;
 
         if (is_valid(cache_entry)) {
-          DPRINTF(RegionScout,
+          DPRINTF(RSDebug,
                   "RS L2 send REGION_INV_ACK addr=%#x valid=1 isMT=%d dirty=%d dest=%s\n",
                   out_msg.addr,
                   cache_entry.CacheState == State:MT,
                   out_msg.Dirty,
                   out_msg.Destination);
         } else {
-          DPRINTF(RegionScout,
+          DPRINTF(RSDebug,
                   "RS L2 send REGION_INV_ACK addr=%#x valid=0 dirty=%d dest=%s\n",
                   out_msg.addr,
                   out_msg.Dirty,

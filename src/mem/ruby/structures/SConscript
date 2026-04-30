@@ -61,4 +61,4 @@ Source('TBEStorage.cc')
 if env['CONF']['RUBY_PROTOCOL_CHI']:
     Source('MN_TBETable.cc')
 Source('NotSharedTable.cc')
-Source('BloomFilter.cc')
+Source('RegionScoutFilter.cc')

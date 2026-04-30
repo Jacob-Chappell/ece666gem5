@@ -13,10 +13,10 @@ namespace gem5
 namespace ruby
 {
 
-class BloomFilter
+class RegionScoutFilter
 {
   public:
-    BloomFilter();
+    RegionScoutFilter();
 
     void insert(Addr addr, int proc_id);
     void remove(Addr addr, int proc_id);

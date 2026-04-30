@@ -84,8 +84,8 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
   // TYPES
 
-  // BloomFilter
-  structure(BloomFilter, external="yes") {
+  // RegionScoutFilter
+  structure(RegionScoutFilter, external="yes") {
     void insert(Addr, NodeID);
     void remove(Addr, NodeID);
     void clear(Addr, NodeID);
@@ -130,7 +130,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
   // ** OBJECTS **
   TBETable TBEs, template="<Directory_TBE>", constructor="m_number_of_TBEs";
 
-  BloomFilter bloom_filter;
+  RegionScoutFilter bloom_filter;
 
   Tick clockEdge();
   Tick cyclesToTicks(Cycles c);
@@ -340,7 +340,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
         bloom_filter.insert(in_msg.addr, requestor_id);
 
-        DPRINTF(RegionScout,
+        DPRINTF(RSDebug,
                 "RS dir insert addr=%#x owner=%s isRegionNS=%d\n",
                 in_msg.addr, in_msg.OriginalRequestorMachId, region_ns);
       }
@@ -524,7 +524,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     peek(responseNetwork_in, ResponseMsg) {
       bloom_filter.remove(in_msg.addr, machineIDToNodeID(in_msg.Sender));
 
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
              "RS dir remove clean addr=%#x sender=%s\n",
              in_msg.addr, in_msg.Sender);
     }
@@ -534,7 +534,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
     peek(responseNetwork_in, ResponseMsg) {
       bloom_filter.remove(in_msg.addr, machineIDToNodeID(in_msg.Sender));
 
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
               "RS dir remove data addr=%#x sender=%s\n",
               in_msg.addr, in_msg.Sender);
     }
@@ -546,7 +546,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
           in_msg.addr,
           machineIDToNodeID(in_msg.OriginalRequestorMachId));
 
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
               "RS dir check addr=%#x requestor=%s result=%d\n",
               in_msg.addr, in_msg.OriginalRequestorMachId, result);
     }
@@ -564,14 +564,14 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
         Entry e := getDirectoryEntry(in_msg.addr);
         e.Owner := in_msg.Sender;
 
-        DPRINTF(RegionScout,
+        DPRINTF(RSDebug,
                 "RS dir REGION_INV_ACK dirty owner addr=%#x owner=%s\n",
                 in_msg.addr, in_msg.Sender);
       }
 
       tbe.NumRegionInvAcks := tbe.NumRegionInvAcks - 1;
 
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
               "RS dir REGION_INV_ACK addr=%#x sender=%s sender_id=%d remaining=%d dirty_seen=%d\n",
               in_msg.addr, in_msg.Sender, sender_id,
               tbe.NumRegionInvAcks, tbe.RegionDirtyOwnerSeen);
@@ -587,7 +587,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
       out_msg.MessageSize := MessageSizeType:Response_Control;
     }
 
-    DPRINTF(RegionScout,
+    DPRINTF(RSDebug,
             "RS dir send dirty-owner INV addr=%#x owner=%s requestor=%s\n",
             address, tbe.RegionDirtyOwner, tbe.RegionRequestor);
   }
@@ -609,7 +609,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
         bloom_filter.insert(address, machineIDToNodeID(tbe.RegionRequestor));
 
-        DPRINTF(RegionScout,
+        DPRINTF(RSDebug,
                 "RS dir forward dirty-owner DATA addr=%#x old_owner=%s new_owner=%s\n",
                 address, in_msg.Sender, tbe.RegionRequestor);
       }
@@ -670,7 +670,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
         tbe.NumRegionInvAcks := tbe.NumRegionInvAcks + 1;
       }
 
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
               "RS dir sent REGION_INVs addr=%#x requestor=%d outstanding=%d\n",
               in_msg.addr, requestor_id, tbe.NumRegionInvAcks);
 
@@ -693,7 +693,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
   action(rs_sendDataOrHandleDirtyOwner, "rsdod", desc="Send data or handle dirty RegionScout owner") {
     if (tbe.RegionDirtyOwnerSeen) {
-      DPRINTF(RegionScout,
+      DPRINTF(RSDebug,
               "RS dir dirty owner fallback needed addr=%#x owner=%s requestor=%s\n",
               address, tbe.RegionDirtyOwner, tbe.RegionRequestor);
 
@@ -716,7 +716,7 @@ machine(MachineType:Directory, "MESI Two Level directory protocol")
 
         bloom_filter.insert(address, machineIDToNodeID(tbe.RegionRequestor));
 
-        DPRINTF(RegionScout,
+        DPRINTF(RSDebug,
                 "RS dir delayed DATA addr=%#x owner=%s isRegionNS=%d\n",
                 address, tbe.RegionRequestor, tbe.RegionIsNS);
       }

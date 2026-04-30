@@ -146,6 +146,16 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
   // TYPES
 
   // DirectoryEntry
+  structure(RegionScoutFilter, external="yes") {
+    void insert(Addr, NodeID);
+    void remove(Addr, NodeID);
+    void clear(Addr, NodeID);
+    int countPossibleHolders(Addr, NodeID);
+    bool mayContain(Addr, NodeID);
+    bool isRegionNotShared(Addr, NodeID);
+  }
+
+
   structure(Entry, desc="...", interface="AbstractCacheEntry", main="false") {
     State DirectoryState,          desc="Directory state";
   }
@@ -191,6 +201,8 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
   Cycles curCycle();
 
   // ** OBJECTS **
+
+  RegionScoutFilter rs_filter;
 
   Set fwd_set;
 
