@@ -2,6 +2,7 @@
 
 #include <limits>
 
+#include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/RSDebug.hh"
 
@@ -10,21 +11,29 @@ namespace gem5
 namespace ruby
 {
 
-RegionScoutFilter::RegionScoutFilter()
-    : counters(NumEntries, 0)
+RegionScoutFilter::RegionScoutFilter(int region_size, int num_entries)
+    : m_region_size(region_size),
+      m_region_mask(region_size - 1),
+      m_region_shift(floorLog2(region_size)),
+      m_num_entries(num_entries),
+      counters(num_entries, 0)
 {
+    assert(region_size > 0);
+    assert((region_size & (region_size - 1)) == 0);
+
+    assert(num_entries > 0);
 }
 
 Addr
 RegionScoutFilter::regionAddr(Addr addr) const
 {
-    return addr & ~RegionMask;
+    return addr & ~((Addr)m_region_mask);
 }
 
 int
 RegionScoutFilter::index(Addr addr) const
 {
-    return (regionAddr(addr) >> 12) % NumEntries;
+    return (regionAddr(addr) >> m_region_shift) % m_num_entries;
 }
 
 void

@@ -72,6 +72,19 @@ def define_options(parser):
         action="store_true",
         help="Hammer: enable Full-bit Directory",
     )
+    parser.add_argument(
+        "--rs-region-size",
+        type=int,
+        default=4096,
+        help="RegionScout region size in bytes. Must be a power of two.",
+    )
+
+    parser.add_argument(
+        "--rs-filter-entries",
+        type=int,
+        default=1024,
+        help="Number of entries in the RegionScout filter.",
+    )
 
 
 def create_system(
@@ -95,6 +108,21 @@ def create_system(
     # controller constructors are called before the network constructor
     #
     block_size_bits = int(math.log(options.cacheline_size, 2))
+
+    if options.rs_region_size <= 0:
+        panic("--rs-region-size must be positive")
+
+    if options.rs_region_size & (options.rs_region_size - 1):
+        panic("--rs-region-size must be a power of two")
+
+    if options.rs_region_size < options.cacheline_size:
+        panic("--rs-region-size must be >= cacheline size")
+
+    if options.rs_filter_entries <= 0:
+        panic("--rs-filter-entries must be positive")
+
+    if options.rs_filter_entries & (options.rs_filter_entries - 1):
+        panic("--rs-filter-entries must be a power of two")
 
     for i in range(options.num_cpus):
         #
@@ -130,6 +158,9 @@ def create_system(
             clk_domain=clk_domain,
             ruby_system=ruby_system,
         )
+
+        l1_cntrl.rs_region_size = options.rs_region_size
+        l1_cntrl.rs_filter_entries = options.rs_filter_entries
 
         cpu_seq = RubySequencer(
             version=i,

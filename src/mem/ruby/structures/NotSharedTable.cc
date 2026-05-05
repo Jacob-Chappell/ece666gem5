@@ -5,9 +5,13 @@ namespace gem5
 namespace ruby
 {
 
-NotSharedTable::NotSharedTable()
-    : m_region_list()
+NotSharedTable::NotSharedTable(int region_size)
+    : m_region_size(region_size),
+      m_region_mask(region_size - 1),
+      m_region_list()
 {
+    assert(region_size > 0);
+    assert((region_size & (region_size - 1)) == 0);
 }
 
 bool
@@ -57,7 +61,7 @@ NotSharedTable::invalidateRegion(Addr address)
 Addr
 NotSharedTable::toRegion(Addr address) const
 {
-    return address & ~RS_REGION_MASK;
+    return address & ~m_region_mask;
 }
 
 } // namespace ruby

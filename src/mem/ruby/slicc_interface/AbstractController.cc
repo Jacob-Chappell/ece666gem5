@@ -128,6 +128,12 @@ AbstractController::resetStats()
     for (uint32_t i = 0; i < size; i++) {
         stats.delayVCHistogram[i]->reset();
     }
+
+    stats.rsDirRequests.reset();
+    stats.rsDirInhibitedRequests.reset();
+    stats.rsDirForwardedBroadcasts.reset();
+    stats.rsDirSuppressedBroadcasts.reset();
+
     ClockedObject::resetStats();
 }
 
@@ -530,6 +536,27 @@ AbstractController::MemoryPort::recvReqRetry()
     controller->serviceMemoryQueue();
 }
 
+void
+AbstractController::rsProfileDirRequest(bool inhibited)
+{
+    ++stats.rsDirRequests;
+    if (inhibited) {
+        ++stats.rsDirInhibitedRequests;
+    }
+}
+
+void
+AbstractController::rsProfileDirForwardedBroadcast()
+{
+    ++stats.rsDirForwardedBroadcasts;
+}
+
+void
+AbstractController::rsProfileDirSuppressedBroadcast()
+{
+    ++stats.rsDirSuppressedBroadcasts;
+}
+
 AbstractController::MemoryPort::MemoryPort(const std::string &_name,
                                            AbstractController *_controller,
                                            PortID id)
@@ -542,12 +569,25 @@ ControllerStats::ControllerStats(statistics::Group *parent)
     : statistics::Group(parent),
       ADD_STAT(fullyBusyCycles,
                "cycles for which number of transistions == max transitions"),
-      ADD_STAT(delayHistogram, "delay_histogram")
+      ADD_STAT(delayHistogram, "delay_histogram"),
+      ADD_STAT(rsDirRequests,
+               "RegionScout: directory requests that reached RS tracking"),
+      ADD_STAT(rsDirInhibitedRequests,
+               "RegionScout: directory requests with BroadcastInhibit set"),
+      ADD_STAT(rsDirForwardedBroadcasts,
+               "RegionScout: directory broadcast forwards actually sent"),
+      ADD_STAT(rsDirSuppressedBroadcasts,
+               "RegionScout: directory broadcasts suppressed")
 {
     fullyBusyCycles
         .flags(statistics::nozero);
     delayHistogram
         .flags(statistics::nozero);
+
+    rsDirRequests.flags(statistics::nozero);
+    rsDirInhibitedRequests.flags(statistics::nozero);
+    rsDirForwardedBroadcasts.flags(statistics::nozero);
+    rsDirSuppressedBroadcasts.flags(statistics::nozero);
 }
 
 } // namespace ruby

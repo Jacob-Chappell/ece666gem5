@@ -191,6 +191,10 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
   void wakeUpBuffers(Addr a);
   Cycles curCycle();
 
+  void rsProfileDirRequest(bool inhibited);
+  void rsProfileDirForwardedBroadcast();
+  void rsProfileDirSuppressedBroadcast();
+
   // ** OBJECTS **
 
   Set fwd_set;
@@ -897,10 +901,13 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
       } else {
         peek(requestQueue_in, RequestMsg) {
           if (tbe.BroadcastInhibit) {
+            rsProfileDirSuppressedBroadcast();
+
             DPRINTF(RubySlicc,
                 "RS_DIR_SUPPRESS addr=%#x type=%s requestor=%s acks=%d\n",
                 address, in_msg.Type, in_msg.Requestor, tbe.Acks);
           } else if (tbe.Acks <= 1) {
+            rsProfileDirForwardedBroadcast();
             enqueue(forwardNetwork_out, RequestMsg, from_memory_controller_latency) {
               out_msg.addr := address;
               out_msg.Type := in_msg.Type;
@@ -981,10 +988,14 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
           }
         } else {
           if (is_valid(tbe) && tbe.BroadcastInhibit) {
+            rsProfileDirSuppressedBroadcast();
+
             DPRINTF(RubySlicc,
                 "RS_DIR_SUPPRESS addr=%#x type=%s requestor=%s acks=%d (fb)\n",
                 address, in_msg.Type, in_msg.Requestor, tbe.Acks);
           } else {
+            rsProfileDirForwardedBroadcast();
+
             enqueue(forwardNetwork_out, RequestMsg, from_memory_controller_latency) {
                 out_msg.addr := address;
                 out_msg.Type := in_msg.Type;
@@ -1293,15 +1304,16 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
 
   // RegionScout Actions
   action(rs_recordBroadcastInhibit, "rsbi", desc="RS: record BroadcastInhibit from request") {
-    peek(requestQueue_in, RequestMsg) {
-      assert(is_valid(tbe));
-      tbe.BroadcastInhibit := in_msg.BroadcastInhibit;
+      peek(requestQueue_in, RequestMsg) {
+          assert(is_valid(tbe));
+          tbe.BroadcastInhibit := in_msg.BroadcastInhibit;
 
-      DPRINTF(RubySlicc,
-          "RS_DIR_REQ addr=%#x type=%s requestor=%s inhibit=%d state=%s\n",
-          address, in_msg.Type, in_msg.Requestor,
-          in_msg.BroadcastInhibit, getState(tbe, cache_entry, address));
-    }
+          rsProfileDirRequest(in_msg.BroadcastInhibit);
+
+          DPRINTF(RubySlicc, "RS_DIR_REQ addr=%#x type=%s requestor=%s inhibit=%d state=%s\n",
+                  address, in_msg.Type, in_msg.Requestor, in_msg.BroadcastInhibit,
+                  getState(tbe, cache_entry, address));
+      }
   }
 
   action(rs_setAcksToAllIfInhibit, "rsaa", desc="RS: if broadcast suppressed, memory response covers all expected acks") {

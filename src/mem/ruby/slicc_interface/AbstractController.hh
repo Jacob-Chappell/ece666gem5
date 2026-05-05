@@ -104,6 +104,10 @@ class AbstractController : public ClockedObject, public Consumer
     virtual MessageBuffer* getMemReqQueue() const = 0;
     virtual MessageBuffer* getMemRespQueue() const = 0;
 
+    void rsProfileDirRequest(bool inhibited);
+    void rsProfileDirForwardedBroadcast();
+    void rsProfileDirSuppressedBroadcast();
+
     // That function must be called by controller when dequeuing mem resp queue
     // for memory controller to receive the retry request in time
     void memRespQueueDequeued();
@@ -520,6 +524,11 @@ class AbstractController : public ClockedObject, public Consumer
         //! cares for
         statistics::Histogram delayHistogram;
         std::vector<statistics::Histogram *> delayVCHistogram;
+
+        statistics::Scalar rsDirRequests;
+        statistics::Scalar rsDirInhibitedRequests;
+        statistics::Scalar rsDirForwardedBroadcasts;
+        statistics::Scalar rsDirSuppressedBroadcasts;
     } stats;
 
 };

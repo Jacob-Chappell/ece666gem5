@@ -14,7 +14,7 @@ namespace ruby
 class RegionScoutFilter
 {
   public:
-    RegionScoutFilter();
+    RegionScoutFilter(int region_size, int num_entries);
 
     void insert(Addr addr);
     void remove(Addr addr);
@@ -23,12 +23,13 @@ class RegionScoutFilter
     bool mayContain(Addr addr) const;
 
   private:
-    static constexpr Addr RegionSize = 4096;
-    static constexpr Addr RegionMask = RegionSize - 1;
-    static constexpr int NumEntries = 1024;
-
     Addr regionAddr(Addr addr) const;
     int index(Addr addr) const;
+
+    Addr m_region_size;
+    Addr m_region_mask;
+    int m_region_shift;
+    int m_num_entries;
 
     std::vector<uint16_t> counters;
 };

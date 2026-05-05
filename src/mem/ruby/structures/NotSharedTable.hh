@@ -11,14 +11,15 @@ namespace gem5
 namespace ruby
 {
 
-static constexpr Addr RS_REGION_SIZE = 4 * 1024;
-static constexpr Addr RS_REGION_MASK = RS_REGION_SIZE - 1;
+// static constexpr Addr RS_REGION_SIZE = 4 * 1024;
+// static constexpr Addr RS_REGION_MASK = RS_REGION_SIZE - 1;
+// static constexpr int RS_NSRT_SIZE = 16;
 static constexpr int RS_NSRT_SIZE = 16;
 
 class NotSharedTable
 {
   public:
-    NotSharedTable();
+    NotSharedTable(int region_size);
 
     bool isInTable(Addr address) const;
     void insertRegion(Addr address);
@@ -26,7 +27,8 @@ class NotSharedTable
 
   private:
     Addr toRegion(Addr address) const;
-
+    Addr m_region_size;
+    Addr m_region_mask;
     std::vector<Addr> m_region_list;
 };
 
