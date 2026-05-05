@@ -1,15 +1,13 @@
-#ifndef __MEM_RUBY_STRUCTURES_BLOOM_FILTER_HH__
-#define __MEM_RUBY_STRUCTURES_BLOOM_FILTER_HH__
+#ifndef __MEM_RUBY_STRUCTURES_REGION_SCOUT_FILTER_HH__
+#define __MEM_RUBY_STRUCTURES_REGION_SCOUT_FILTER_HH__
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <vector>
 
 #include "base/types.hh"
 
 namespace gem5
 {
-
 namespace ruby
 {
 
@@ -18,27 +16,24 @@ class RegionScoutFilter
   public:
     RegionScoutFilter();
 
-    void insert(Addr addr, int proc_id);
-    void remove(Addr addr, int proc_id);
-    bool mayContain(Addr addr, int proc_id) const;
-    bool isRegionNotShared(Addr addr, int requestor_id) const;
-    void clear(Addr addr, int proc_id);
-    int countPossibleHolders(Addr addr, int requestor_id) const;
+    void insert(Addr addr);
+    void remove(Addr addr);
+    void clear(Addr addr);
 
-    private:
-        static constexpr uint32_t RegionSize = 4096;
-        static constexpr uint32_t RegionMask = RegionSize - 1;
-        static constexpr int NumProcs = 64; // TODO: parameterize
-        static constexpr int NumEntries = 1024; // CRH size
+    bool mayContain(Addr addr) const;
 
-        Addr regionAddr(Addr addr) const;
-        int index(Addr addr) const;
+  private:
+    static constexpr Addr RegionSize = 4096;
+    static constexpr Addr RegionMask = RegionSize - 1;
+    static constexpr int NumEntries = 1024;
 
-        std::vector<std::vector<uint16_t>> counters;
+    Addr regionAddr(Addr addr) const;
+    int index(Addr addr) const;
+
+    std::vector<uint16_t> counters;
 };
 
 } // namespace ruby
 } // namespace gem5
 
-
-#endif // __MEM_RUBY_STRUCTURES_BLOOM_FILTER_HH__
+#endif

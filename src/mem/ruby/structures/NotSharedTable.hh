@@ -1,38 +1,31 @@
-/// Contains all structure definitions for RegionScout
-#ifndef __MEM_RUBY_STRUCTURES_NSRT_HH__
-#define __MEM_RUBY_STRUCTURES_NSRT_HH__
+#ifndef __MEM_RUBY_STRUCTURES_NOT_SHARED_TABLE_HH__
+#define __MEM_RUBY_STRUCTURES_NOT_SHARED_TABLE_HH__
 
-#include <stdint.h>
+#include <cstdint>
 #include <vector>
+
 #include "base/types.hh"
 
 namespace gem5
 {
-
 namespace ruby
 {
 
-// 4K region
-const uint32_t RS_REGION_SIZE = 4 << 10;
-const uint32_t RS_REGION_MASK = RS_REGION_SIZE - 1;
-const uint32_t RS_NSRT_SIZE = 16;
+static constexpr Addr RS_REGION_SIZE = 4 * 1024;
+static constexpr Addr RS_REGION_MASK = RS_REGION_SIZE - 1;
+static constexpr int RS_NSRT_SIZE = 16;
 
-class NotSharedTable {
+class NotSharedTable
+{
   public:
     NotSharedTable();
 
-    /// look up address, see if an entry covers it
-    bool isInTable(Addr address);
-
-    /// Insert region an address is in into the table.
+    bool isInTable(Addr address) const;
     void insertRegion(Addr address);
-
-    /// Invalidates an entry of the address.
     void invalidateRegion(Addr address);
 
   private:
-    /// convert addr to region addr
-    Addr toRegion(Addr address);
+    Addr toRegion(Addr address) const;
 
     std::vector<Addr> m_region_list;
 };
@@ -40,5 +33,4 @@ class NotSharedTable {
 } // namespace ruby
 } // namespace gem5
 
-
-#endif // __MEM_RUBY_STRUCTURES_REGIONSCOUT_HH__
+#endif // __MEM_RUBY_STRUCTURES_NOT_SHARED_TABLE_HH__
