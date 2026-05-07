@@ -41,8 +41,10 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
       bool no_mig_atomic := "True";
       bool send_evictions;
 
+      bool rs_disable_inhibit := "False";
       int rs_region_size := 4096;
       int rs_filter_entries := 1024;
+      int rs_nsrt_size := 16;
 
       // NETWORK BUFFERS
       MessageBuffer * requestFromCache, network="To", virtual_network="2",
@@ -195,7 +197,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
   TBETable TBEs, template="<L1Cache_TBE>", constructor="m_number_of_TBEs";
 
-  NotSharedTable nsrt, constructor="m_rs_region_size";
+  NotSharedTable nsrt, constructor="m_rs_region_size, m_rs_nsrt_size";
   RegionScoutFilter crh, constructor="m_rs_region_size, m_rs_filter_entries";
 
   Tick clockEdge();

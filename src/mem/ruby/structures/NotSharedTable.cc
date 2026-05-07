@@ -5,13 +5,15 @@ namespace gem5
 namespace ruby
 {
 
-NotSharedTable::NotSharedTable(int region_size)
+NotSharedTable::NotSharedTable(int region_size, int nsrt_size)
     : m_region_size(region_size),
       m_region_mask(region_size - 1),
+      m_nsrt_size(nsrt_size),
       m_region_list()
 {
     assert(region_size > 0);
     assert((region_size & (region_size - 1)) == 0);
+    assert(nsrt_size > 0);
 }
 
 bool
@@ -39,7 +41,7 @@ NotSharedTable::insertRegion(Addr address)
 
     m_region_list.push_back(region);
 
-    if (m_region_list.size() > RS_NSRT_SIZE) {
+    if (m_region_list.size() > m_nsrt_size) {
         m_region_list.erase(m_region_list.begin());
     }
 }

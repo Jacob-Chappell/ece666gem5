@@ -38,6 +38,8 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
       bool probe_filter_enabled := "False";
       bool full_bit_dir_enabled := "False";
 
+      bool rs_disable_inhibit := "False";
+
       MessageBuffer * forwardFromDir, network="To", virtual_network="3",
             vnet_type="forward";
 
@@ -1306,13 +1308,20 @@ machine(MachineType:Directory, "AMD Hammer-like protocol")
   action(rs_recordBroadcastInhibit, "rsbi", desc="RS: record BroadcastInhibit from request") {
       peek(requestQueue_in, RequestMsg) {
           assert(is_valid(tbe));
-          tbe.BroadcastInhibit := in_msg.BroadcastInhibit;
 
-          rsProfileDirRequest(in_msg.BroadcastInhibit);
+          if (rs_disable_inhibit) {
+              tbe.BroadcastInhibit := false;
+          } else {
+              tbe.BroadcastInhibit := in_msg.BroadcastInhibit;
+          }
 
-          DPRINTF(RubySlicc, "RS_DIR_REQ addr=%#x type=%s requestor=%s inhibit=%d state=%s\n",
-                  address, in_msg.Type, in_msg.Requestor, in_msg.BroadcastInhibit,
-                  getState(tbe, cache_entry, address));
+          rsProfileDirRequest(tbe.BroadcastInhibit);
+
+          DPRINTF(RubySlicc,
+              "RS_DIR_REQ addr=%#x type=%s requestor=%s raw_inhibit=%d effective_inhibit=%d disable=%d state=%s\n",
+              address, in_msg.Type, in_msg.Requestor,
+              in_msg.BroadcastInhibit, tbe.BroadcastInhibit,
+              rs_disable_inhibit, getState(tbe, cache_entry, address));
       }
   }
 

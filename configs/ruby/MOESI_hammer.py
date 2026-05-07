@@ -86,6 +86,19 @@ def define_options(parser):
         help="Number of entries in the RegionScout filter.",
     )
 
+    parser.add_argument(
+        "--rs-nsrt-size",
+        type=int,
+        default=16,
+        help="Number of entries in the RegionScout NSRT.",
+    )
+
+    parser.add_argument(
+        "--rs-disable-inhibit",
+        action="store_true",
+        help="Disable RegionScout broadcast inhibit (force BroadcastInhibit=0)",
+    )
+
 
 def create_system(
     options, full_system, system, dma_ports, bootmem, ruby_system, cpus
@@ -124,6 +137,9 @@ def create_system(
     if options.rs_filter_entries & (options.rs_filter_entries - 1):
         panic("--rs-filter-entries must be a power of two")
 
+    if options.rs_nsrt_size <= 0:
+        panic("--rs-nsrt-size must be positive")
+
     for i in range(options.num_cpus):
         #
         # First create the Ruby objects associated with this cpu
@@ -161,6 +177,8 @@ def create_system(
 
         l1_cntrl.rs_region_size = options.rs_region_size
         l1_cntrl.rs_filter_entries = options.rs_filter_entries
+        l1_cntrl.rs_nsrt_size = options.rs_nsrt_size
+        l1_cntrl.rs_disable_inhibit = options.rs_disable_inhibit
 
         cpu_seq = RubySequencer(
             version=i,
@@ -239,6 +257,8 @@ def create_system(
         dir_cntrl.probeFilter = pf
         dir_cntrl.probe_filter_enabled = options.pf_on
         dir_cntrl.full_bit_dir_enabled = options.dir_on
+
+        dir_cntrl.rs_disable_inhibit = options.rs_disable_inhibit
 
         if options.recycle_latency:
             dir_cntrl.recycle_latency = options.recycle_latency

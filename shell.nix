@@ -22,5 +22,9 @@ stdenv.mkDerivation {
     packer
     binutils
     # glibc.static
+    vim
+    tmux
+    nano
+    git
   ];
 }
