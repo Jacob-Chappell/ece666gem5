@@ -125,6 +125,7 @@ structure(ResponseMsg, desc="...", interface="Message") {
   int Acks, default="0",    desc="How many messages this counts as";
   MessageSizeType MessageSize, desc="size category of the message";
   bool RegionNS, default="false", desc="Region for address not shared";
+  bool RegionTrueNS, default="false", desc="Region for address is truly not shared. No effect on protocol, just for stats";
 
   Cycles InitialRequestTime, default="Cycles(0)",
         desc="time the initial requests was sent from the L1Cache";

@@ -217,6 +217,7 @@ structure (CacheMemory, external = "yes") {
   void deallocate(Addr);
   AbstractCacheEntry lookup(Addr);
   bool isTagPresent(Addr);
+  bool isRegionPresent(Addr, int);
   Cycles getTagLatency();
   Cycles getDataLatency();
   void setMRU(Addr);

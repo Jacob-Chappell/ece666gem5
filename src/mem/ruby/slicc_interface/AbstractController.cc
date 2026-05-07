@@ -133,6 +133,7 @@ AbstractController::resetStats()
     stats.rsDirInhibitedRequests.reset();
     stats.rsDirForwardedBroadcasts.reset();
     stats.rsDirSuppressedBroadcasts.reset();
+    stats.rsTrueGlobalRegionMisses.reset();
 
     ClockedObject::resetStats();
 }
@@ -557,6 +558,12 @@ AbstractController::rsProfileDirSuppressedBroadcast()
     ++stats.rsDirSuppressedBroadcasts;
 }
 
+void
+AbstractController::rsProfileTrueGlobalRegionMiss()
+{
+    ++stats.rsTrueGlobalRegionMisses;
+}
+
 AbstractController::MemoryPort::MemoryPort(const std::string &_name,
                                            AbstractController *_controller,
                                            PortID id)
@@ -577,7 +584,9 @@ ControllerStats::ControllerStats(statistics::Group *parent)
       ADD_STAT(rsDirForwardedBroadcasts,
                "RegionScout: directory broadcast forwards actually sent"),
       ADD_STAT(rsDirSuppressedBroadcasts,
-               "RegionScout: directory broadcasts suppressed")
+               "RegionScout: directory broadcasts suppressed"),
+      ADD_STAT(rsTrueGlobalRegionMisses,
+               "RegionScout: true global region misses")
 {
     fullyBusyCycles
         .flags(statistics::nozero);
@@ -588,6 +597,7 @@ ControllerStats::ControllerStats(statistics::Group *parent)
     rsDirInhibitedRequests.flags(statistics::nozero);
     rsDirForwardedBroadcasts.flags(statistics::nozero);
     rsDirSuppressedBroadcasts.flags(statistics::nozero);
+    rsTrueGlobalRegionMisses.flags(statistics::nozero);
 }
 
 } // namespace ruby

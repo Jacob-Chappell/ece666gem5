@@ -86,6 +86,8 @@ class CacheMemory : public SimObject
     // tests to see if an address is present in the cache
     bool isTagPresent(Addr address) const;
 
+    bool isRegionPresent(Addr address, int region_size) const;
+
     // Returns true if there is:
     //   a) a tag match on this address or there is
     //   b) an unused line in the same cache "way"

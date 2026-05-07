@@ -167,6 +167,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
     bool RegionNS, default="true", desc="all responders lacked this region";
     bool BroadcastInhibit, default="false", desc="RS: suppress broadcast for this request";
+    bool RegionTrueNS, default="true",
+        desc="Region for address is truly not shared. No effect on protocol, just for stats";
 
     Cycles InitialRequestTime, default="Cycles(0)",
             desc="time the initial requests was sent from the L1Cache";
@@ -209,6 +211,8 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
   void wakeUpBuffers(Addr a);
   Cycles curCycle();
   MachineID mapAddressToMachine(Addr addr, MachineType mtype);
+
+  void rsProfileTrueGlobalRegionMiss();
 
   Entry getCacheEntry(Addr address), return_by_pointer="yes" {
     Entry L2cache_entry := static_cast(Entry, "pointer", L2cache.lookup(address));
@@ -654,6 +658,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -678,6 +683,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -722,6 +728,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -747,6 +754,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -772,6 +780,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -793,6 +802,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         DPRINTF(RubySlicc, "%s\n", out_msg.DataBlk);
         out_msg.Acks := machineCount(MachineType:L1Cache);
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -813,6 +823,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.Dirty := tbe.Dirty;
         DPRINTF(RubySlicc, "%s\n", out_msg.DataBlk);
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.Acks := machineCount(MachineType:L1Cache);
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
@@ -833,6 +844,10 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.SilentAcks := in_msg.SilentAcks;
         assert(in_msg.DirectedProbe == false);
         out_msg.RegionNS := !crh.mayContain(address);
+        out_msg.RegionTrueNS :=
+            !(L1Dcache.isRegionPresent(address, rs_region_size) ||
+              L1Icache.isRegionPresent(address, rs_region_size) ||
+              L2cache.isRegionPresent(address, rs_region_size));
         DPRINTF(RubySlicc,
             "RS_RESP addr=%#x sender=%s regionNS=%d\n",
             address, machineID, out_msg.RegionNS);
@@ -854,6 +869,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.SilentAcks := in_msg.SilentAcks;
         assert(in_msg.DirectedProbe == false);
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.MessageSize := MessageSizeType:Response_Control;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
         out_msg.ForwardRequestTime := in_msg.ForwardRequestTime;
@@ -1109,6 +1125,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -1135,6 +1152,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           out_msg.Acks := 2;
         }
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -1156,6 +1174,7 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
         out_msg.Dirty := tbe.Dirty;
         out_msg.Acks := machineCount(MachineType:L1Cache);
         out_msg.RegionNS := false;
+        out_msg.RegionTrueNS := false;
         out_msg.SilentAcks := in_msg.SilentAcks;
         out_msg.MessageSize := MessageSizeType:Response_Data;
         out_msg.InitialRequestTime := in_msg.InitialRequestTime;
@@ -1366,12 +1385,15 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
 
           if (machineIDToMachineType(in_msg.Sender) == MachineType:L1Cache) {
             tbe.RegionNS := tbe.RegionNS && in_msg.RegionNS;
+            tbe.RegionTrueNS := tbe.RegionTrueNS && in_msg.RegionTrueNS;
           }
 
 
           DPRINTF(RubySlicc,
-              "RS_AGG addr=%#x from=%s msg=%d agg=%d\n",
-              address, in_msg.Sender, in_msg.RegionNS, tbe.RegionNS);
+              "RS_AGG addr=%#x from=%s msg=%d agg=%d true_msg=%d true_agg=%d\n",
+              address, in_msg.Sender,
+              in_msg.RegionNS, tbe.RegionNS,
+              in_msg.RegionTrueNS, tbe.RegionTrueNS);
       }
   }
 
@@ -1388,6 +1410,10 @@ machine(MachineType:L1Cache, "AMD Hammer-like protocol")
           DPRINTF(RubySlicc,
               "RS_NSRT_SKIP addr=%#x regionNS=%d\n",
               address, tbe.RegionNS);
+      }
+
+      if (tbe.RegionTrueNS) {
+          rsProfileTrueGlobalRegionMiss();
       }
   }
 

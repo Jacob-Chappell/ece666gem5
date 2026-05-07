@@ -107,6 +107,7 @@ class AbstractController : public ClockedObject, public Consumer
     void rsProfileDirRequest(bool inhibited);
     void rsProfileDirForwardedBroadcast();
     void rsProfileDirSuppressedBroadcast();
+    void rsProfileTrueGlobalRegionMiss();
 
     // That function must be called by controller when dequeuing mem resp queue
     // for memory controller to receive the retry request in time
@@ -529,6 +530,7 @@ class AbstractController : public ClockedObject, public Consumer
         statistics::Scalar rsDirInhibitedRequests;
         statistics::Scalar rsDirForwardedBroadcasts;
         statistics::Scalar rsDirSuppressedBroadcasts;
+        statistics::Scalar rsTrueGlobalRegionMisses;
     } stats;
 
 };

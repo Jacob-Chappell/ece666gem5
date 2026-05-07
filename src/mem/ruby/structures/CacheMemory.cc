@@ -262,6 +262,41 @@ CacheMemory::isTagPresent(Addr address) const
     return true;
 }
 
+bool
+CacheMemory::isRegionPresent(Addr address, int region_size) const
+{
+    assert(region_size > 0);
+    assert(isPowerOf2(region_size));
+
+    const Addr line_addr = makeLineAddress(address);
+    const Addr region_base = line_addr & ~(Addr(region_size) - 1);
+
+    for (int set = 0; set < m_cache_num_sets; set++) {
+        for (int way = 0; way < m_cache_assoc; way++) {
+            const AbstractCacheEntry* entry = m_cache[set][way];
+
+            if (entry == nullptr) {
+                continue;
+            }
+
+            if (entry->m_Permission == AccessPermission_Invalid ||
+                entry->m_Permission == AccessPermission_NotPresent) {
+                continue;
+            }
+
+            const Addr entry_line_addr = makeLineAddress(entry->m_Address);
+            const Addr entry_region_base =
+                entry_line_addr & ~(Addr(region_size) - 1);
+
+            if (entry_region_base == region_base) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 // Returns true if there is:
 //   a) a tag match on this address or there is
 //   b) an unused line in the same cache "way"
